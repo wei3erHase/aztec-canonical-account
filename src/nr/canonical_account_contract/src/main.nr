@@ -1,11 +1,8 @@
 //! # Canonical Account Contract
 //!
-//! An account contract that validates calls against a specific token address
-//! and function selector, then forwards execution. No signature verification
-//! is performed -- every transaction to this account is accepted.
-//!
-//! This is a stepping stone toward the FPC cold-start flow where the account
-//! contract acts as a restricted entrypoint for a known set of operations.
+//! A restricted account entrypoint that enforces a single `transfer_in_private`
+//! call to a known token, with fee sponsorship handled internally via the
+//! SponsoredFPC. No signature verification -- every transaction is accepted.
 
 use aztec::macros::aztec;
 
@@ -29,56 +26,78 @@ pub contract CanonicalAccount {
     // AppPayload serialization layout (per FunctionCall, 6 fields each):
     //   [0] args_hash, [1] function_selector, [2] target_address,
     //   [3] is_public, [4] hide_msg_sender, [5] is_static
-    // With ACCOUNT_MAX_CALLS = 5 calls => 30 fields, then tx_nonce => 31 total.
     global FIELDS_PER_CALL: u32 = 6;
-    global TARGET_ADDRESS_OFFSET: u32 = 2;
+    global ARGS_HASH_OFFSET: u32 = 0;
     global FUNCTION_SELECTOR_OFFSET: u32 = 1;
+    global TARGET_ADDRESS_OFFSET: u32 = 2;
+
+    // AccountFeePaymentMethodOptions::EXTERNAL -- signals that fee payment
+    // is handled by another contract, not the account itself.
+    global FEE_EXTERNAL: u8 = 0;
 
     #[storage]
     struct Storage<Context> {
         token: PublicImmutable<AztecAddress, Context>,
+        sponsored_fpc: PublicImmutable<AztecAddress, Context>,
     }
 
     #[external("public")]
     #[initializer]
-    fn constructor(token: AztecAddress) {
+    fn constructor(token: AztecAddress, sponsored_fpc: AztecAddress) {
         self.storage.token.initialize(token);
+        self.storage.sponsored_fpc.initialize(sponsored_fpc);
     }
 
-    /// Restricted entrypoint: validates the payload contains a call to the
-    /// expected token's `transfer_in_private`, then forwards all calls
-    /// (including fee-related calls like `sponsor_unconditionally`).
+    /// Restricted entrypoint that:
+    ///  1. Asserts this is the transaction root (msg_sender == None)
+    ///  2. Asserts fee_payment_method == EXTERNAL (contract sponsors fees itself)
+    ///  3. Validates call[0] targets the expected token with transfer_in_private
+    ///  4. Validates calls[1..4] are empty (exactly one call in payload)
+    ///  5. Calls SponsoredFPC.sponsor_unconditionally() for fee sponsorship
+    ///  6. Dispatches the transfer via call_private_function_with_args_hash
     #[external("private")]
     #[noinitcheck]
     #[allow_phase_change]
-    fn entrypoint(app_payload: AppPayload, _fee_payment_method: u8, _cancellable: bool) {
+    fn entrypoint(app_payload: AppPayload, fee_payment_method: u8, _cancellable: bool) {
         assert(self.context.maybe_msg_sender().is_none(), "must be tx entrypoint");
+        assert(fee_payment_method == FEE_EXTERNAL, "fee must be externally handled");
 
         let expected_token = self.storage.token.read();
         let expected_selector =
             FunctionSelector::from_signature("transfer_in_private((Field),(Field),u128,Field)");
 
-        // AppPayload.function_calls is crate-private, so we serialize to access
-        // the individual FunctionCall fields by their known offsets.
         let fields = app_payload.serialize();
-        let mut found_transfer = false;
 
-        for i in 0..5 {
+        // call[0] must be transfer_in_private targeting the expected token
+        let target = AztecAddress::from_field(fields[TARGET_ADDRESS_OFFSET]);
+        assert(target == expected_token, "call must target the expected token");
+
+        let selector = FunctionSelector::from_field(fields[FUNCTION_SELECTOR_OFFSET]);
+        assert(selector == expected_selector, "call must use transfer_in_private selector");
+
+        let args_hash = fields[ARGS_HASH_OFFSET];
+
+        // calls[1..4] must be empty
+        for i in 1..5 {
             let offset = i * FIELDS_PER_CALL;
-            let target = AztecAddress::from_field(fields[offset + TARGET_ADDRESS_OFFSET]);
-
-            if target == expected_token {
-                let selector =
-                    FunctionSelector::from_field(fields[offset + FUNCTION_SELECTOR_OFFSET]);
-                assert(selector == expected_selector, "invalid selector for token call");
-                found_transfer = true;
-            }
+            let t = AztecAddress::from_field(fields[offset + TARGET_ADDRESS_OFFSET]);
+            assert(t.is_zero(), "payload must contain exactly one call");
         }
-
-        assert(found_transfer, "transfer call not found in payload");
 
         // Safety: we trust the oracle to correctly set the tag sender for note delivery
         unsafe { set_sender_for_tags(self.context.this_address()) };
-        app_payload.execute_calls(self.context);
+
+        // Sponsor fees via SponsoredFPC (must come before app call for phase ordering)
+        let sponsored_fpc = self.storage.sponsored_fpc.read();
+        let sponsor_selector = FunctionSelector::from_signature("sponsor_unconditionally()");
+        let _sponsor = self.context.call_private_function(sponsored_fpc, sponsor_selector, []);
+
+        // Dispatch the transfer explicitly
+        let _transfer = self.context.call_private_function_with_args_hash(
+            expected_token,
+            expected_selector,
+            args_hash,
+            false,
+        );
     }
 }

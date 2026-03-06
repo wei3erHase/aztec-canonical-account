@@ -3,7 +3,8 @@
  *
  * Provides utilities for deploying and interacting with the
  * CanonicalAccount contract, which restricts execution to a single
- * validated token transfer (no signature verification).
+ * validated token transfer with fee sponsorship handled internally
+ * by the contract itself (no signature verification).
  */
 
 import type { AuthWitnessProvider } from "@aztec/aztec.js/account";
@@ -11,10 +12,12 @@ import { AccountManager } from "@aztec/aztec.js/wallet";
 import type { Wallet } from "@aztec/aztec.js/wallet";
 import { DefaultAccountContract } from "@aztec/accounts/defaults";
 import { Fr } from "@aztec/aztec.js/fields";
+import type { FeePaymentMethod } from "@aztec/aztec.js/fee";
 import { AuthWitness } from "@aztec/stdlib/auth-witness";
 import { AztecAddress } from "@aztec/stdlib/aztec-address";
 import type { CompleteAddress } from "@aztec/stdlib/contract";
 import type { ContractArtifact } from "@aztec/stdlib/abi";
+import { ExecutionPayload } from "@aztec/stdlib/tx";
 import {
   CanonicalAccountContract as CanonicalAccountContractType,
   CanonicalAccountContractArtifact,
@@ -32,7 +35,10 @@ class NoopAuthWitnessProvider implements AuthWitnessProvider {
  * entrypoint (AppPayload) integration via DefaultAccountEntrypoint.
  */
 export class CanonicalAccountAccountContract extends DefaultAccountContract {
-  constructor(private tokenAddress: AztecAddress) {
+  constructor(
+    private tokenAddress: AztecAddress,
+    private sponsoredFpcAddress: AztecAddress,
+  ) {
     super();
   }
 
@@ -43,12 +49,40 @@ export class CanonicalAccountAccountContract extends DefaultAccountContract {
   async getInitializationFunctionAndArgs() {
     return {
       constructorName: "constructor",
-      constructorArgs: [this.tokenAddress],
+      constructorArgs: [this.tokenAddress, this.sponsoredFpcAddress],
     };
   }
 
   getAuthWitnessProvider(_address: CompleteAddress): AuthWitnessProvider {
     return new NoopAuthWitnessProvider();
+  }
+}
+
+/**
+ * Fee payment method for the CanonicalAccount's self-handled fee model.
+ *
+ * Sets `feePayer` to the SponsoredFPC address (so the SDK picks
+ * `AccountFeePaymentMethodOptions.EXTERNAL = 0`) but adds NO calls
+ * to the execution payload -- the Noir contract calls
+ * `sponsor_unconditionally()` internally.
+ */
+export class SelfHandledFeePaymentMethod implements FeePaymentMethod {
+  constructor(private fpcAddress: AztecAddress) {}
+
+  getAsset(): Promise<AztecAddress> {
+    throw new Error("Not applicable for self-handled fees");
+  }
+
+  getFeePayer() {
+    return Promise.resolve(this.fpcAddress);
+  }
+
+  async getExecutionPayload(): Promise<ExecutionPayload> {
+    return new ExecutionPayload([], [], [], [], this.fpcAddress);
+  }
+
+  getGasSettings() {
+    return undefined;
   }
 }
 
@@ -72,6 +106,7 @@ export interface DeployCanonicalAccountResult {
 export async function deployCanonicalAccount(
   wallet: Wallet,
   tokenAddress: AztecAddress,
+  sponsoredFpcAddress: AztecAddress,
   deployer: AztecAddress,
   options?: {
     secretKey?: Fr;
@@ -82,7 +117,10 @@ export async function deployCanonicalAccount(
   const secretKey = options?.secretKey ?? Fr.random();
   const salt = options?.salt ?? Fr.random();
 
-  const accountContract = new CanonicalAccountAccountContract(tokenAddress);
+  const accountContract = new CanonicalAccountAccountContract(
+    tokenAddress,
+    sponsoredFpcAddress,
+  );
   const manager = await AccountManager.create(
     wallet,
     secretKey,

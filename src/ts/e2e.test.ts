@@ -3,7 +3,7 @@
  *
  * Validates that the CanonicalAccount contract can receive private tokens
  * and transfer them using a restricted entrypoint that validates the
- * call target and function selector.
+ * call target, function selector, and fee handling.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -13,6 +13,7 @@ import type { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee/testing";
 import { setupTestSuite } from "./utils.js";
 import {
   deployCanonicalAccount,
+  SelfHandledFeePaymentMethod,
   type DeployCanonicalAccountResult,
 } from "./canonical-account/utils.js";
 import { TokenContract } from "@aztec/noir-contracts.js/Token";
@@ -23,16 +24,18 @@ describe("Canonical Account", () => {
   let deployerAddress: AztecAddress;
   let token: TokenContract;
   let sponsoredPaymentMethod: SponsoredFeePaymentMethod;
+  let sponsoredFpcAddress: AztecAddress;
+  let selfHandledFee: SelfHandledFeePaymentMethod;
 
   const MINT_AMOUNT = 1000n;
 
   beforeAll(async () => {
-    ({
-      cleanup,
-      wallet,
-      accounts: [deployerAddress],
-      sponsoredPaymentMethod,
-    } = await setupTestSuite());
+    let accounts: AztecAddress[];
+    ({ cleanup, wallet, accounts, sponsoredPaymentMethod } =
+      await setupTestSuite());
+    deployerAddress = accounts[0];
+    sponsoredFpcAddress = await sponsoredPaymentMethod.getFeePayer();
+    selfHandledFee = new SelfHandledFeePaymentMethod(sponsoredFpcAddress);
 
     token = await TokenContract.deploy(
       wallet,
@@ -51,6 +54,7 @@ describe("Canonical Account", () => {
     const { address: canonicalAddress } = await deployCanonicalAccount(
       wallet,
       token.address,
+      sponsoredFpcAddress,
       deployerAddress,
       {
         secretKey: Fr.random(),
@@ -78,6 +82,7 @@ describe("Canonical Account", () => {
     const { address: canonicalAddress } = await deployCanonicalAccount(
       wallet,
       token.address,
+      sponsoredFpcAddress,
       deployerAddress,
       {
         secretKey: Fr.random(),
@@ -103,7 +108,7 @@ describe("Canonical Account", () => {
       )
       .send({
         from: canonicalAddress,
-        fee: { paymentMethod: sponsoredPaymentMethod },
+        fee: { paymentMethod: selfHandledFee },
       });
 
     const accountBalance = await token.methods
@@ -127,6 +132,7 @@ describe("Canonical Account", () => {
       canonical = await deployCanonicalAccount(
         wallet,
         token.address,
+        sponsoredFpcAddress,
         deployerAddress,
         {
           secretKey: Fr.random(),
@@ -163,9 +169,9 @@ describe("Canonical Account", () => {
           .transfer_to_public(canonicalAddress, deployerAddress, 1n, Fr.ZERO)
           .send({
             from: canonicalAddress,
-            fee: { paymentMethod: sponsoredPaymentMethod },
+            fee: { paymentMethod: selfHandledFee },
           }),
-      ).rejects.toThrow(/invalid selector for token call/);
+      ).rejects.toThrow(/call must use transfer_in_private selector/);
     });
 
     it("should reject calling wrong token address", async () => {
@@ -182,9 +188,9 @@ describe("Canonical Account", () => {
           .transfer_in_private(canonicalAddress, deployerAddress, 1n, Fr.ZERO)
           .send({
             from: canonicalAddress,
-            fee: { paymentMethod: sponsoredPaymentMethod },
+            fee: { paymentMethod: selfHandledFee },
           }),
-      ).rejects.toThrow(/transfer call not found in payload/);
+      ).rejects.toThrow(/call must target the expected token/);
     });
   });
 });
