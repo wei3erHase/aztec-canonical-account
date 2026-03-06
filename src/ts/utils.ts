@@ -9,8 +9,9 @@ import { Fr } from "@aztec/aztec.js/fields";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee/testing";
 import { SponsoredFPCContract } from "@aztec/noir-contracts.js/SponsoredFPC";
 import { AztecAddress } from "@aztec/stdlib/aztec-address";
-import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { registerInitialLocalNetworkAccountsInWallet } from "@aztec/wallets/testing";
+
+import { CanonicalEmbeddedWallet } from "./canonical-account/utils.js";
 
 const { NODE_URL = "http://localhost:8080" } = process.env;
 
@@ -28,7 +29,7 @@ export async function setupTestSuite(proverEnabled: boolean = false) {
     `canonical-wallet-${randomBytes(8).toString("hex")}`,
   );
 
-  const wallet = await EmbeddedWallet.create(node, {
+  const wallet = await CanonicalEmbeddedWallet.create(node, {
     pxeConfig: { dataDirectory, proverEnabled },
   });
 
@@ -42,10 +43,6 @@ export async function setupTestSuite(proverEnabled: boolean = false) {
     } catch {}
   };
 
-  // Register the canonical SponsoredFPC for fee sponsorship.
-  // Needed for txs sent by accounts without fee juice (e.g., custom accounts,
-  // AztecAddress.ZERO account deployments). NOT needed for publications from
-  // the pre-funded deployer.
   const sponsoredFPCAddress = await registerSponsoredFPC(wallet);
   const sponsoredPaymentMethod = new SponsoredFeePaymentMethod(
     sponsoredFPCAddress,
@@ -65,7 +62,7 @@ export async function setupTestSuite(proverEnabled: boolean = false) {
  * The SponsoredFPC is deployed at a well-known address using salt = 0.
  */
 async function registerSponsoredFPC(
-  wallet: EmbeddedWallet,
+  wallet: CanonicalEmbeddedWallet,
 ): Promise<AztecAddress> {
   const instance = await getContractInstanceFromInstantiationParams(
     SponsoredFPCContract.artifact,

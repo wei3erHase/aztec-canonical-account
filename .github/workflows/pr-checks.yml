@@ -10,4 +10,6 @@ concurrency:
 jobs:
   checks:
     uses: defi-wonderland/aztec-ci-actions/.github/workflows/run-tests.yml@v0
+    with:
+      runner: ubuntu-latest
     secrets: inherit

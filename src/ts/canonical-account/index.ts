@@ -1,4 +1,5 @@
 export {
+  CanonicalEmbeddedWallet,
   deployCanonicalAccount,
   CanonicalAccountAccountContract,
   CanonicalAccountContract,

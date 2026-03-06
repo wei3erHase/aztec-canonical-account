@@ -60,9 +60,14 @@ yarn add @defi-wonderland/canonical-wallet
 
 ```typescript
 import {
+  CanonicalEmbeddedWallet,
   deployCanonicalAccount,
   SelfHandledFeePaymentMethod,
 } from "@defi-wonderland/canonical-wallet/canonical-account";
+
+// Use CanonicalEmbeddedWallet instead of EmbeddedWallet -- it overrides
+// getAccountFromAddress to support custom account types via registerAccount().
+const wallet = await CanonicalEmbeddedWallet.create(node, options);
 
 const { contract, address } = await deployCanonicalAccount(
   wallet,
@@ -72,7 +77,7 @@ const { contract, address } = await deployCanonicalAccount(
   { fee: { paymentMethod: sponsoredPaymentMethod } },
 );
 
-// The SelfHandledFeePaymentMethod tells the SDK "fees are external" (enum 0)
+// SelfHandledFeePaymentMethod tells the SDK "fees are external" (enum 0)
 // without injecting any fee calls -- the contract handles sponsorship internally.
 const selfHandledFee = new SelfHandledFeePaymentMethod(sponsoredFpcAddress);
 
@@ -165,9 +170,9 @@ The default `DeployAccountMethod` options set `skipClassPublication: true` and `
 
 When the token contract emits private logs (note delivery during `transfer_in_private`), it calls `get_sender_for_tags()` to determine the tag sender. Standard account contracts set this via the `AccountActions` helper. Since we bypass `AccountActions`, we must call `set_sender_for_tags(self.context.this_address())` explicitly before dispatching calls.
 
-### Wallet integration requires monkey-patching
+### Wallet integration via `EmbeddedWallet` subclass
 
-`EmbeddedWallet.getAccountFromAddress` uses `walletDB` which only knows built-in account types (`'schnorr'`, `'ecdsasecp256k1'`, `'ecdsasecp256r1'`). Custom account contracts cannot be stored in `walletDB`. We patch `getAccountFromAddress` at runtime to return our `AccountManager`-derived `Account` for the canonical address, enabling standard `send({from: canonicalAddress})` syntax.
+`EmbeddedWallet.getAccountFromAddress` is `protected` and resolves accounts via `walletDB`, which only knows built-in types (`'schnorr'`, `'ecdsasecp256k1'`, `'ecdsasecp256r1'`). Custom account contracts can't be stored there. We subclass `EmbeddedWallet` as `CanonicalEmbeddedWallet`, overriding `getAccountFromAddress` to check a local registry of custom accounts first, falling back to the base implementation. The `NodeEmbeddedWallet.create` factory uses `this` polymorphism, so `CanonicalEmbeddedWallet.create(node, opts)` returns the subclass type directly.
 
 ## Connection to FPC Cold-Start
 
@@ -180,7 +185,7 @@ Key concepts validated here that carry forward:
 - **Self-handled fee sponsorship** using `AccountFeePaymentMethodOptions.EXTERNAL` + direct FPC calls from the entrypoint
 - **`AppPayload` serialization** for field-level validation without access to crate-private members
 - **`PublicImmutable` storage** can be initialized in a public constructor and read from private entrypoints
-- **The SDK can route transactions** through custom accounts via `send({from: customAccount})` with the wallet patch
+- **The SDK can route transactions** through custom accounts via `send({from: customAccount})` using a `CanonicalEmbeddedWallet` subclass
 
 ## License
 

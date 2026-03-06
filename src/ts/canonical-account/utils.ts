@@ -7,9 +7,8 @@
  * by the contract itself (no signature verification).
  */
 
-import type { AuthWitnessProvider } from "@aztec/aztec.js/account";
+import type { Account, AuthWitnessProvider } from "@aztec/aztec.js/account";
 import { AccountManager } from "@aztec/aztec.js/wallet";
-import type { Wallet } from "@aztec/aztec.js/wallet";
 import { DefaultAccountContract } from "@aztec/accounts/defaults";
 import { Fr } from "@aztec/aztec.js/fields";
 import type { FeePaymentMethod } from "@aztec/aztec.js/fee";
@@ -18,10 +17,40 @@ import { AztecAddress } from "@aztec/stdlib/aztec-address";
 import type { CompleteAddress } from "@aztec/stdlib/contract";
 import type { ContractArtifact } from "@aztec/stdlib/abi";
 import { ExecutionPayload } from "@aztec/stdlib/tx";
+import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import {
   CanonicalAccountContract as CanonicalAccountContractType,
   CanonicalAccountContractArtifact,
 } from "../../artifacts/CanonicalAccount.js";
+
+/**
+ * EmbeddedWallet subclass that supports custom (non-built-in) account types.
+ *
+ * The base EmbeddedWallet resolves accounts via walletDB, which only knows
+ * built-in types (schnorr, ecdsasecp256k1, ecdsasecp256r1). This subclass
+ * overrides `getAccountFromAddress` to check a local registry first,
+ * allowing custom account contracts (like CanonicalAccount) to participate
+ * in the standard `send({from: address})` flow.
+ *
+ * Uses the inherited polymorphic `create` factory, so
+ * `CanonicalEmbeddedWallet.create(node, opts)` returns a
+ * `CanonicalEmbeddedWallet` instance directly.
+ */
+export class CanonicalEmbeddedWallet extends EmbeddedWallet {
+  private registeredAccounts = new Map<string, Account>();
+
+  registerAccount(address: AztecAddress, account: Account) {
+    this.registeredAccounts.set(address.toString(), account);
+  }
+
+  protected override async getAccountFromAddress(
+    address: AztecAddress,
+  ): Promise<Account> {
+    const registered = this.registeredAccounts.get(address.toString());
+    if (registered) return registered;
+    return super.getAccountFromAddress(address);
+  }
+}
 
 class NoopAuthWitnessProvider implements AuthWitnessProvider {
   async createAuthWit(messageHash: Fr): Promise<AuthWitness> {
@@ -100,11 +129,11 @@ export interface DeployCanonicalAccountResult {
  * because AztecAddress.ZERO triggers self-deployment which calls the
  * account's entrypoint -- incompatible with the tx-root assertion.
  *
- * After deployment, monkey-patches `wallet.getAccountFromAddress` so that
- * `send({from: canonicalAccountAddress})` works without modifying the SDK.
+ * Registers the deployed account in the wallet's custom account registry
+ * so `send({from: canonicalAccountAddress})` resolves correctly.
  */
 export async function deployCanonicalAccount(
-  wallet: Wallet,
+  wallet: CanonicalEmbeddedWallet,
   tokenAddress: AztecAddress,
   sponsoredFpcAddress: AztecAddress,
   deployer: AztecAddress,
@@ -140,17 +169,8 @@ export async function deployCanonicalAccount(
     fee: options?.fee,
   });
 
-  // Patch the wallet so it can resolve this account for send({from: ...}).
-  // EmbeddedWallet.getAccountFromAddress uses walletDB which only knows
-  // built-in account types. We intercept calls for our address.
   const account = await manager.getAccount();
-  const original = (wallet as any).getAccountFromAddress.bind(wallet);
-  (wallet as any).getAccountFromAddress = async (address: AztecAddress) => {
-    if (address.equals(manager.address)) {
-      return account;
-    }
-    return original(address);
-  };
+  wallet.registerAccount(manager.address, account);
 
   const contract = CanonicalAccountContractType.at(manager.address, wallet);
 
