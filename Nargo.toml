@@ -1,2 +1,2 @@
 [workspace]
-members = ["src/nr/schnorr_account_contract"]
+members = ["src/nr/canonical_account_contract"]

@@ -12,9 +12,9 @@
       "types": "./dist/ts/index.d.ts",
       "import": "./dist/ts/index.js"
     },
-    "./schnorr-account": {
-      "types": "./dist/ts/schnorr-account/index.d.ts",
-      "import": "./dist/ts/schnorr-account/index.js"
+    "./canonical-account": {
+      "types": "./dist/ts/canonical-account/index.d.ts",
+      "import": "./dist/ts/canonical-account/index.js"
     }
   },
   "files": [
@@ -47,17 +47,17 @@
     "@aztec/pxe": "4.0.0-devnet.2-patch.1",
     "@aztec/stdlib": "4.0.0-devnet.2-patch.1",
     "@aztec/wallets": "4.0.0-devnet.2-patch.1",
-    "@types/node": "25.0.2"
+    "@types/node": "25.3.5"
   },
   "devDependencies": {
-    "@commitlint/cli": "20.2.0",
-    "@commitlint/config-conventional": "20.2.0",
+    "@commitlint/cli": "20.4.3",
+    "@commitlint/config-conventional": "20.4.3",
     "husky": "9.1.7",
-    "lint-staged": "16.2.7",
-    "prettier": "3.7.4",
+    "lint-staged": "16.3.2",
+    "prettier": "3.8.1",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
-    "vitest": "4.0.15"
+    "vitest": "4.0.18"
   },
   "config": {
     "aztecVersion": "4.0.0-devnet.2-patch.1"

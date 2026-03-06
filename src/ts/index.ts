@@ -1,7 +1,7 @@
 /**
- * Canonical Schnorr Account Contract
+ * Canonical Account Contract
  *
- * TypeScript utilities for deploying and interacting with the Schnorr account contract.
+ * TypeScript utilities for deploying and interacting with the canonical account contract.
  */
 
-export * as schnorrAccount from "./schnorr-account/index.js";
+export * as canonicalAccount from "./canonical-account/index.js";
