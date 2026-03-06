@@ -47,7 +47,7 @@
     "@aztec/pxe": "4.0.0-devnet.2-patch.1",
     "@aztec/stdlib": "4.0.0-devnet.2-patch.1",
     "@aztec/wallets": "4.0.0-devnet.2-patch.1",
-    "@types/node": "25.0.2"
+    "@types/node": "25.3.5"
   },
   "devDependencies": {
     "@commitlint/cli": "20.2.0",
