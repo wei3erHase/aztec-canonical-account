@@ -12,9 +12,9 @@
       "types": "./dist/ts/index.d.ts",
       "import": "./dist/ts/index.js"
     },
-    "./schnorr-account": {
-      "types": "./dist/ts/schnorr-account/index.d.ts",
-      "import": "./dist/ts/schnorr-account/index.js"
+    "./canonical-account": {
+      "types": "./dist/ts/canonical-account/index.d.ts",
+      "import": "./dist/ts/canonical-account/index.js"
     }
   },
   "files": [
