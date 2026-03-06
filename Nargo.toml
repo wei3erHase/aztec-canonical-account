@@ -1,0 +1,2 @@
+[workspace]
+members = ["src/nr/schnorr_account_contract"]

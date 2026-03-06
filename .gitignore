@@ -1,0 +1,16 @@
+node_modules
+target/
+src/artifacts/
+log/
+.vscode
+.DS_Store
+codegenCache.json
+.env
+.cursor
+store
+store-*
+pxe-*
+wallet_data_*
+benchmarks/*.benchmark.json
+dist/
+*.tsbuildinfo
